@@ -345,72 +345,36 @@ def main():
         return False
 
     booking_url = "https://www.net.city.nagoya.jp/cgi-bin/sp/sps04001"
-    notified = {}
-    if new:
-        items = list(new.items())
-        for batch_start in range(0, len(items), 8):
-            batch = items[batch_start:batch_start+8]
-            details = "\n".join(
-                f"**{v['date']}（星期{'一二三四五六日'[dt.date.fromisoformat(v['date']).weekday()]}） · {v['time']}**\n{v['area']} · {v['venue']}"
-                for _, v in batch
-            )
-            alert = {
-                "content": f"{mention} 🏸 **发现新的羽毛球空场！**",
-                "embeds": [{
-                    "title": "🏸 新增可用场地",
-                    "description": details,
-                    "color": 0xF59E0B,
-                    "url": booking_url,
-                    "footer": {"text": "仅供查询参考 · 请在官网确认并自行预约"}
-                }],
-                "allowed_mentions": {"users": [discord_user_id]} if discord_user_id.isdigit() else {"parse": []}
-            }
-            if send_discord(alert, "vacancy alert"):
-                notified.update(dict(batch))
+    def compact_row(v):
+        day = dt.date.fromisoformat(v["date"])
+        hours = re.sub(r":00\b", "", v["time"]).replace("～", "-").replace("〜", "-")
+        venue = v["venue"].replace("第1競技場", "①").replace("第2競技場", "②").replace("第１競技場", "①").replace("第２競技場", "②").replace("プール体育室", "").replace("競技場", "").replace("SC", "").strip()
+        return f"{day:%m/%d} {'一二三四五六日'[day.weekday()]} | {hours} | {venue}"
 
-    start_date = window[0].isoformat()
-    end_date = window[-1].isoformat()
-    if failed:
-        color = 0xE6A23C
-        headline = f"⚠️ {failed} 天查询失败 · 下次补查"
-    elif found:
-        color = 0xF59E0B
-        headline = f"🏸 发现 {len(found)} 条空场 · 新增 {len(new)} 条"
-    else:
-        color = 0x2ECC71
-        headline = "✅ 暂无空场"
-
-    # Include current vacancies in every monitoring report, even if already notified.
-    # This keeps the summary useful when no *new* vacancy alert is generated.
     current_slots = sorted(found.values(), key=lambda v: (v["date"], v["time"], v["area"], v["venue"]))
-    slot_lines = [
-        f"• {v['date']}（星期{'一二三四五六日'[dt.date.fromisoformat(v['date']).weekday()]}） {v['time']} · {v['area']} · {v['venue']}"
-        for v in current_slots[:15]
-    ]
-    slot_details = ("\n📍 **当前空场**\n" + "\n".join(slot_lines)
-                    + (f"\n…另有 {len(current_slots) - 15} 条" if len(current_slots) > 15 else "")) if slot_lines else ""
-    report = {
-        "content": f"{mention} 🏸 监控完成",
-        "embeds": [{
-            "title": "🏸 名古屋羽毛球监控",
-            "description": (
-                f"**{headline}**\n"
-                f"📅 {start_date} ～ {end_date}\n"
-                f"🔎 成功 **{checked}/{horizon}**  ·  ⚠️ 失败 **{failed}**  ·  🏸 空场 **{len(found)}**"
-                + (f"\n⚠️ 待补查：{', '.join(failed_dates[:12])}" + (f" 等共{failed}天" if failed > 12 else "") if failed_dates else "")
-                + slot_details
-            ),
-            "color": color,
-            "url": booking_url,
-            "footer": {
-                "text": f"{now.strftime('%m/%d %H:%M')} JST · 全区域 · 工作日夜间 / 周末全天"
-            }
-        }],
-        "allowed_mentions": {"parse": []}
-    }
-    report["content"] = f"{mention} 🏸 监控完成"  # Ping on every completed scan.
-    report["allowed_mentions"] = {"users": [discord_user_id]} if discord_user_id.isdigit() else {"parse": []}
-    report_sent = send_discord(report, "monitoring report")
+    batches = [current_slots[i:i+15] for i in range(0, len(current_slots), 15)] or [[]]
+    color = 0xE6A23C if failed else (0xF59E0B if found else 0x2ECC71)
+    summary = f"成功 **{checked}/{horizon}** ｜失败 **{failed}** ｜空场 **{len(found)}** ｜新增 **{len(new)}**"
+    if failed_dates:
+        summary += "\n⚠️ 待补查：" + "、".join(d[5:].replace("-", "/") for d in failed_dates)
+    report_sent = True
+    for index, batch in enumerate(batches):
+        lines = ["日期   | 时间  | 场地"] + [compact_row(v) for v in batch]
+        details = "\n```\n" + "\n".join(lines) + "\n```" if batch else "\n暂无已确认空场"
+        report = {
+            "content": f"{mention} 🏸 监控完成" if index == 0 else "",
+            "embeds": [{
+                "title": "🏸 名古屋羽毛球监控" + (f" ({index+1}/{len(batches)})" if len(batches)>1 else ""),
+                "description": (summary if index == 0 else "") + details,
+                "color": color,
+                "url": booking_url,
+                "footer": {"text": f"{now.strftime('%m/%d %H:%M')} JST · ①第一 / ②第二竞技场 · 请自行确认预约"}
+            }],
+            "allowed_mentions": {"users": [discord_user_id]} if index == 0 and discord_user_id.isdigit() else {"parse": []}
+        }
+        if not send_discord(report, "monitoring report"):
+            report_sent = False
+    notified = dict(new) if report_sent else {}
     if not report_sent:
         print("WARNING: Discord monitoring report was not delivered", flush=True)
     # Only mark notified slots as seen; retain history for 65 days.
