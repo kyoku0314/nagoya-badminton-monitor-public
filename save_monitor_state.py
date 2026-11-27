@@ -33,6 +33,12 @@ def main():
             raise ValueError("Unexpected remote monitor state format")
         # Retain notifications from both runs; never discard existing records.
         merged_seen = {**remote_seen, **local_seen}
+        if Path("snapshot_ready_run.json").exists():
+            merged_seen = {k:v for k,v in remote_seen.items() if v.get("date") not in local_checked}
+            merged_seen.update(local_seen)
+            from datetime import datetime, timezone, timedelta
+            today = datetime.now(timezone(timedelta(hours=9))).date().isoformat()
+            merged_seen = {k:v for k,v in merged_seen.items() if v.get("date", "") >= today}
         # Keep failures from concurrent runs, but clear dates verified by this run.
         # An unverified date is never removed from the retry queue.
         merged_failed = sorted((set(remote_failed) | set(local_failed)) - local_checked)
