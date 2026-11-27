@@ -319,6 +319,7 @@ def main():
     CHECKED_STATE.write_text(json.dumps(sorted(verified_dates), ensure_ascii=False, indent=2) + "\n")
     print(f"Priority backlog for next run: {len(failed_dates)} dates", flush=True)
     new = {k:v for k,v in found.items() if k not in previous}
+    removed = {k:v for k,v in previous.items() if v.get("date") in verified_dates and k not in found}
     webhook = os.environ.get("DISCORD_WEBHOOK_URL", "")
     discord_user_id = os.environ.get("DISCORD_USER_ID", "").strip()
     mention = f"<@{discord_user_id}>" if discord_user_id.isdigit() else ""
@@ -353,7 +354,7 @@ def main():
     groups = {}
     for v in current_slots:
         hours = re.sub(r":00\b", "", v["time"]).replace("～", "-").replace("〜", "-")
-        groups.setdefault(v["date"], {}).setdefault(hours, []).append(compact_venue(v))
+        groups.setdefault(v["date"], {}).setdefault(hours, []).append(("🆕 " if "|".join(v.values()) in new else "") + compact_venue(v))
     batches = []
     for date_text, times in groups.items():
         day = dt.date.fromisoformat(date_text)
@@ -368,7 +369,12 @@ def main():
                 batches[-1] += "\n" + line
     batches = batches or [""]
     color = 0xE6A23C if failed else (0xF59E0B if found else 0x2ECC71)
-    summary = f"成功 **{checked}/{horizon}** ｜失败 **{failed}** ｜空场 **{len(found)}** ｜新增 **{len(new)}**"
+    summary = f"成功 **{checked}/{horizon}** ｜失败 **{failed}** ｜空场 **{len(found)}** ｜新增 **{len(new)}** ｜消失 **{len(removed)}**"
+    if removed:
+        gone = sorted(removed.values(), key=lambda v: (v["date"], v["time"], v["venue"]))
+        summary += "\n➖ 已不显示：" + "；".join(f"{v['date'][5:]} {v['time']} {compact_venue(v)}" for v in gone[:5])
+        if len(gone) > 5:
+            summary += f" 等{len(gone)}个"
     if failed_dates:
         summary += "\n⚠️ 待补查：" + "、".join(d[5:].replace("-", "/") for d in failed_dates)
     report_sent = True
@@ -391,11 +397,13 @@ def main():
     if not report_sent:
         print("WARNING: Discord monitoring report was not delivered", flush=True)
     # Only mark notified slots as seen; retain history for 65 days.
-    if webhook:
-        previous.update(notified)
+    if webhook and report_sent:
+        previous = {k:v for k,v in previous.items() if v.get("date") not in verified_dates}
+        previous.update(found)
         cutoff = (now.date() - dt.timedelta(days=1)).isoformat()
         previous = {k:v for k,v in previous.items() if v.get("date", "") >= cutoff}
         STATE.write_text(json.dumps(previous, ensure_ascii=False, indent=2) + "\n")
+        Path("snapshot_ready_run.json").write_text("true\n")
     print(f"Date coverage: {checked}/{horizon} checked, {failed} failed; new matching slots: {len(new)}; booking disabled", flush=True)
     if webhook and not report_sent:
         raise RuntimeError("Discord monitoring report delivery failed")
