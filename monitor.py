@@ -345,22 +345,35 @@ def main():
         return False
 
     booking_url = "https://www.net.city.nagoya.jp/cgi-bin/sp/sps04001"
-    def compact_row(v):
-        day = dt.date.fromisoformat(v["date"])
-        hours = re.sub(r":00\b", "", v["time"]).replace("～", "-").replace("〜", "-")
+    def compact_venue(v):
         venue = v["venue"].replace("第1競技場", "①").replace("第2競技場", "②").replace("第１競技場", "①").replace("第２競技場", "②").replace("プール体育室", "").replace("競技場", "").replace("SC", "").strip()
-        return f"{day:%m/%d} {'一二三四五六日'[day.weekday()]} | {hours} | {venue}"
+        return venue
 
     current_slots = sorted(found.values(), key=lambda v: (v["date"], v["time"], v["area"], v["venue"]))
-    batches = [current_slots[i:i+15] for i in range(0, len(current_slots), 15)] or [[]]
+    groups = {}
+    for v in current_slots:
+        hours = re.sub(r":00\b", "", v["time"]).replace("～", "-").replace("〜", "-")
+        groups.setdefault(v["date"], {}).setdefault(hours, []).append(compact_venue(v))
+    batches = []
+    for date_text, times in groups.items():
+        day = dt.date.fromisoformat(date_text)
+        heading = f"**📅 {day:%m/%d}（{'一二三四五六日'[day.weekday()]}）**"
+        for hours, venues in times.items():
+            for offset in range(0, len(venues), 8):
+                line = f"• {hours}　" + "、".join(venues[offset:offset+8])
+                if not batches or len(batches[-1]) + len(heading) + len(line) + 3 > 1500:
+                    batches.append("")
+                if not batches[-1] or not batches[-1].endswith("\n") and (hours == next(iter(times)) and offset == 0):
+                    batches[-1] += ("\n\n" if batches[-1] else "") + heading
+                batches[-1] += "\n" + line
+    batches = batches or [""]
     color = 0xE6A23C if failed else (0xF59E0B if found else 0x2ECC71)
     summary = f"成功 **{checked}/{horizon}** ｜失败 **{failed}** ｜空场 **{len(found)}** ｜新增 **{len(new)}**"
     if failed_dates:
         summary += "\n⚠️ 待补查：" + "、".join(d[5:].replace("-", "/") for d in failed_dates)
     report_sent = True
     for index, batch in enumerate(batches):
-        lines = ["日期   | 时间  | 场地"] + [compact_row(v) for v in batch]
-        details = "\n```\n" + "\n".join(lines) + "\n```" if batch else "\n暂无已确认空场"
+        details = "\n\n" + batch if batch else "\n暂无已确认空场"
         report = {
             "content": f"{mention} 🏸 监控完成" if index == 0 else "",
             "embeds": [{
