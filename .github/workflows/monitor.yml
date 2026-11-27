@@ -1,0 +1,75 @@
+name: Nagoya Badminton Monitor
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_discord_only:
+        description: "Only test Discord webhook (skip court monitoring)"
+        required: false
+        type: boolean
+        default: false
+  # Schedule intentionally disabled until Discord and migration are verified.
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nagoya-badminton-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    if: ${{ inputs.test_discord_only != true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.58.0-noble
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Install matching Playwright Python package
+        run: |
+          python -m pip install --retries 3 --timeout 20 playwright==1.58.0
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Monitor available courts (read only)
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_USER_ID: ${{ secrets.DISCORD_USER_ID }}
+        run: python3 monitor.py
+      - name: Save notified slots and failed-date backlog
+        if: always()
+        run: python3 save_monitor_state.py
+
+  test_discord:
+    if: ${{ inputs.test_discord_only == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Discord test message
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_USER_ID: ${{ secrets.DISCORD_USER_ID }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error
+          url = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
+          if not url:
+              raise SystemExit("ERROR: DISCORD_WEBHOOK_URL secret is missing or empty")
+          if not url.startswith(("https://discord.com/api/webhooks/", "https://discordapp.com/api/webhooks/")):
+              raise SystemExit("ERROR: Webhook URL format is unexpected; check the GitHub secret")
+          data = json.dumps({"content": "🏸 名古屋羽毛球监控：Discord Webhook 测试消息（不查询场地）"}).encode()
+          request = urllib.request.Request(url, data=data, headers={
+              "Content-Type": "application/json",
+              "User-Agent": "Mozilla/5.0"})
+          try:
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  print("Discord test succeeded, HTTP", response.status)
+          except urllib.error.HTTPError as error:
+              print("Discord test failed, HTTP", error.code)
+              print("Response body (truncated):", error.read(350).decode("utf-8", "replace"))
+              raise SystemExit(1)
+          except urllib.error.URLError as error:
+              print("Discord network error:", type(error.reason).__name__)
+              raise SystemExit(1)
+          PY
