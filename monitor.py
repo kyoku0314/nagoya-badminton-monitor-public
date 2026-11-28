@@ -357,25 +357,27 @@ def main():
     current_slots = sorted(found.values(), key=lambda v: (v["date"], v["time"], v["area"], v["venue"]))
     groups = {}
     for v in current_slots:
-        hours = re.sub(r":00\b", "", v["time"]).replace("～", "-").replace("〜", "-")
+        hours = v["time"].replace("～", "–").replace("〜", "–").replace("-", "–")
         groups.setdefault(v["date"], {}).setdefault(hours, []).append(("🆕 " if "|".join(v.values()) in new else "") + compact_venue(v))
     batches = []
     for date_text, times in groups.items():
-        day = dt.date.fromisoformat(date_text)
-        heading = f"**📅 {format_date(day)}**"
+        heading = f"**📅 {format_date(dt.date.fromisoformat(date_text))}**"
         for hours, venues in times.items():
-            for offset in range(0, len(venues), 1):
-                line = f"• {hours}　" + "、".join(venues[offset:offset+1])
-                if not batches or len(batches[-1]) + len(heading) + len(line) + 3 > 1500:
-                    batches.append("")
-                if not batches[-1] or not batches[-1].endswith("\n") and (hours == next(iter(times)) and offset == 0):
-                    batches[-1] += ("\n\n" if batches[-1] else "") + heading
-                batches[-1] += "\n" + line
+            for offset, venue in enumerate(venues):
+                line = "・" + venue
+                prefix = ("\n\n" + heading if hours == next(iter(times)) and offset == 0 else "") + ("\n**" + hours + "**" if offset == 0 else "")
+                if not batches or len(batches[-1]) + len(prefix) + len(line) + len(heading) + len(hours) + 10 > 1500:
+                    batches.append(heading + "\n**" + hours + "**\n" + line)
+                else:
+                    batches[-1] += prefix + "\n" + line
     batches = batches or [""]
-    color = 0xE6A23C if failed else (0xF59E0B if found else 0x2ECC71)
-    summary = f"成功 **{checked}/{horizon}** ｜失败 **{failed}** ｜空场 **{len(found)}** ｜新增 **{len(new)}** ｜消失 **{len(removed)}**"
+    color = 0xE6A23C if failed else 0x2ECC71
+    status = "⚠️" if failed else "🟢"
+    summary = f"{status} 查询成功 **{checked}/{horizon}** ｜失败 **{failed}**"
+    summary += f"\n🏸 空场 **{len(found)}** ｜🆕 新增 **{len(new)}** ｜消失 **{len(removed)}**"
     elapsed = int(time.monotonic() - started)
-    summary += f"\n⏱ 耗时 {elapsed // 60}分{elapsed % 60:02d}秒 · 补查成功 {retry_total - len(failed_dates)}/{retry_total}"
+    summary += f"\n⏱️ 查询耗时：**{elapsed // 60}分{elapsed % 60:02d}秒**"
+    summary += f"\n🔄 补查成功：**{retry_total - len(failed_dates)}/{retry_total}**" if retry_total else "\n🔄 无需补查"
     if removed:
         gone = sorted(removed.values(), key=lambda v: (v["date"], v["time"], v["venue"]))
         summary += "\n➖ 已不显示：" + "；".join(f"{format_date(dt.date.fromisoformat(v['date']))} {v['time']} {compact_venue(v)}" for v in gone[:5])
@@ -393,7 +395,7 @@ def main():
                 "description": (summary if index == 0 else "") + details,
                 "color": color,
                 "url": booking_url,
-                "footer": {"text": f"{format_date(now.date())} {now:%H:%M} JST · 请自行确认预约"}
+                "footer": {"text": f"更新：{format_date(dt.datetime.now(JST).date())} {dt.datetime.now(JST):%H:%M} JST · 全区域 · 未来30天 · 仅监控"}
             }],
             "allowed_mentions": {"users": [discord_user_id]} if index == 0 and discord_user_id.isdigit() else {"parse": []}
         }
