@@ -349,8 +349,7 @@ def main():
 
     booking_url = "https://www.net.city.nagoya.jp/cgi-bin/sp/sps04001"
     def compact_venue(v):
-        venue = v["venue"].replace("第1競技場", "①").replace("第2競技場", "②").replace("第１競技場", "①").replace("第２競技場", "②").replace("プール体育室", "").replace("競技場", "").replace("SC", "").strip()
-        return venue
+        return f"{v['area']} · {v['venue']}"
 
     def format_date(day):
         return f"{day:%m/%d}（星期{'一二三四五六日'[day.weekday()]}）"
@@ -365,8 +364,8 @@ def main():
         day = dt.date.fromisoformat(date_text)
         heading = f"**📅 {format_date(day)}**"
         for hours, venues in times.items():
-            for offset in range(0, len(venues), 8):
-                line = f"• {hours}　" + "、".join(venues[offset:offset+8])
+            for offset in range(0, len(venues), 1):
+                line = f"• {hours}　" + "、".join(venues[offset:offset+1])
                 if not batches or len(batches[-1]) + len(heading) + len(line) + 3 > 1500:
                     batches.append("")
                 if not batches[-1] or not batches[-1].endswith("\n") and (hours == next(iter(times)) and offset == 0):
@@ -394,7 +393,7 @@ def main():
                 "description": (summary if index == 0 else "") + details,
                 "color": color,
                 "url": booking_url,
-                "footer": {"text": f"{format_date(now.date())} {now:%H:%M} JST · ①第一 / ②第二竞技场 · 请自行确认预约"}
+                "footer": {"text": f"{format_date(now.date())} {now:%H:%M} JST · 请自行确认预约"}
             }],
             "allowed_mentions": {"users": [discord_user_id]} if index == 0 and discord_user_id.isdigit() else {"parse": []}
         }
