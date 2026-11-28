@@ -348,8 +348,11 @@ def main():
         return False
 
     booking_url = "https://www.net.city.nagoya.jp/cgi-bin/sp/sps04001"
+    priority_areas = {'昭和区', '東区', '中区', '千種区', '熱田区'}
     def compact_venue(v):
-        return f"{v['area']} · {v['venue']}"
+        area = v['area'].strip()
+        marker = '⭐️ ' if area in priority_areas else ''
+        return f"{marker}{v['area']} · {v['venue']}"
 
     def format_date(day):
         return f"{day:%m/%d}（星期{'一二三四五六日'[day.weekday()]}）"
@@ -395,7 +398,7 @@ def main():
                 "description": (summary if index == 0 else "") + details,
                 "color": color,
                 "url": booking_url,
-                "footer": {"text": f"更新：{format_date(dt.datetime.now(JST).date())} {dt.datetime.now(JST):%H:%M} JST · 全区域 · 未来30天 · 仅监控"}
+                "footer": {"text": f"更新：{format_date(dt.datetime.now(JST).date())} {dt.datetime.now(JST):%H:%M} JST · ⭐️ 重点区域 · 全区域 · 未来30天 · 仅监控"}
             }],
             "allowed_mentions": {"users": [discord_user_id]} if index == 0 and discord_user_id.isdigit() else {"parse": []}
         }
