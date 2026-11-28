@@ -9,11 +9,7 @@ on:
         type: boolean
         default: false
   schedule:
-    - cron: '2,27,52 23,4,9,14 * * *'
-    - cron: '17,42 0,5,10 * * *'
-    - cron: '7,32,57 1,6,11 * * *'
-    - cron: '22,47 2,7,12 * * *'
-    - cron: '12,37 3,8,13 * * *'
+    - cron: '2,17,32,47 23,0-14 * * *'
 
 permissions:
   contents: write
