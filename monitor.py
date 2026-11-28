@@ -350,6 +350,9 @@ def main():
         venue = v["venue"].replace("第1競技場", "①").replace("第2競技場", "②").replace("第１競技場", "①").replace("第２競技場", "②").replace("プール体育室", "").replace("競技場", "").replace("SC", "").strip()
         return venue
 
+    def format_date(day):
+        return f"{day:%m/%d}（星期{'一二三四五六日'[day.weekday()]}）"
+
     current_slots = sorted(found.values(), key=lambda v: (v["date"], v["time"], v["area"], v["venue"]))
     groups = {}
     for v in current_slots:
@@ -358,7 +361,7 @@ def main():
     batches = []
     for date_text, times in groups.items():
         day = dt.date.fromisoformat(date_text)
-        heading = f"**📅 {day:%m/%d}（{'一二三四五六日'[day.weekday()]}）**"
+        heading = f"**📅 {format_date(day)}**"
         for hours, venues in times.items():
             for offset in range(0, len(venues), 8):
                 line = f"• {hours}　" + "、".join(venues[offset:offset+8])
@@ -372,11 +375,11 @@ def main():
     summary = f"成功 **{checked}/{horizon}** ｜失败 **{failed}** ｜空场 **{len(found)}** ｜新增 **{len(new)}** ｜消失 **{len(removed)}**"
     if removed:
         gone = sorted(removed.values(), key=lambda v: (v["date"], v["time"], v["venue"]))
-        summary += "\n➖ 已不显示：" + "；".join(f"{v['date'][5:]} {v['time']} {compact_venue(v)}" for v in gone[:5])
+        summary += "\n➖ 已不显示：" + "；".join(f"{format_date(dt.date.fromisoformat(v['date']))} {v['time']} {compact_venue(v)}" for v in gone[:5])
         if len(gone) > 5:
             summary += f" 等{len(gone)}个"
     if failed_dates:
-        summary += "\n⚠️ 待补查：" + "、".join(d[5:].replace("-", "/") for d in failed_dates)
+        summary += "\n⚠️ 待补查：" + "、".join(format_date(dt.date.fromisoformat(d)) for d in failed_dates)
     report_sent = True
     for index, batch in enumerate(batches):
         details = "\n\n" + batch if batch else "\n暂无已确认空场"
@@ -387,7 +390,7 @@ def main():
                 "description": (summary if index == 0 else "") + details,
                 "color": color,
                 "url": booking_url,
-                "footer": {"text": f"{now.strftime('%m/%d %H:%M')} JST · ①第一 / ②第二竞技场 · 请自行确认预约"}
+                "footer": {"text": f"{format_date(now.date())} {now:%H:%M} JST · ①第一 / ②第二竞技场 · 请自行确认预约"}
             }],
             "allowed_mentions": {"users": [discord_user_id]} if index == 0 and discord_user_id.isdigit() else {"parse": []}
         }
