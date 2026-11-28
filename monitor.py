@@ -119,6 +119,7 @@ def log_unverified(page, day, source):
     print(f"Unverified {source} response for {day}", flush=True)
 
 def main():
+    started = time.monotonic()
     now = dt.datetime.now(JST)
     if not (8 <= now.hour < 24):
         print("Outside monitoring hours (JST).")
@@ -150,7 +151,7 @@ def main():
     except (ValueError, OSError):
         old_failed = []
     priority = set(old_failed) if isinstance(old_failed, list) else set()
-    dates = sorted(window, key=lambda d: (d.isoformat() not in priority, d))
+    dates = sorted(window, key=lambda d: (d != now.date(), (d - now.date()).days >= 7, d.isoformat() not in priority, d))
     failed_dates = []
     for day in dates:
         if current_month != (day.year, day.month):
@@ -252,6 +253,7 @@ def main():
         time.sleep(0.2)
     # Give dates that failed during the main scan one final attempt after all dates.
     # Do not count a failed date as checked unless its results page is validated.
+    retry_total = len(failed_dates)
     if failed_dates:
         print(f"Final retry for {len(failed_dates)} failed dates", flush=True)
         remaining = []
@@ -373,6 +375,8 @@ def main():
     batches = batches or [""]
     color = 0xE6A23C if failed else (0xF59E0B if found else 0x2ECC71)
     summary = f"成功 **{checked}/{horizon}** ｜失败 **{failed}** ｜空场 **{len(found)}** ｜新增 **{len(new)}** ｜消失 **{len(removed)}**"
+    elapsed = int(time.monotonic() - started)
+    summary += f"\n⏱ 耗时 {elapsed // 60}分{elapsed % 60:02d}秒 · 补查成功 {retry_total - len(failed_dates)}/{retry_total}"
     if removed:
         gone = sorted(removed.values(), key=lambda v: (v["date"], v["time"], v["venue"]))
         summary += "\n➖ 已不显示：" + "；".join(f"{format_date(dt.date.fromisoformat(v['date']))} {v['time']} {compact_venue(v)}" for v in gone[:5])
